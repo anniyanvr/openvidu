@@ -235,7 +235,6 @@ public class ComposedRecordingService extends RecordingService {
 				RecordingManager.finalReason(reason));
 
 		String containerId = this.sessionsContainers.remove(recording.getSessionId());
-		this.cleanRecordingMaps(recording);
 
 		final String recordingId = recording.getId();
 
@@ -251,6 +250,7 @@ public class ComposedRecordingService extends RecordingService {
 
 			// Session was closed while recording container was initializing
 			// Wait until containerId is available and force its stop and deletion
+			final Recording recordingAux = recording;
 			new Thread(() -> {
 				log.warn("Session closed while starting recording container");
 				boolean containerClosed = false;
@@ -282,6 +282,7 @@ public class ComposedRecordingService extends RecordingService {
 						}
 					}
 				}
+				cleanRecordingMaps(recordingAux);
 				if (i == timeout) {
 					log.error("Container did not launched in {} seconds", timeout / 2);
 					return;
@@ -290,53 +291,9 @@ public class ComposedRecordingService extends RecordingService {
 
 		} else {
 
-			// Gracefully stop ffmpeg process
-			try {
-				dockerManager.runCommandInContainer(containerId, "echo 'q' > stop", 0);
-			} catch (InterruptedException e1) {
-				e1.printStackTrace();
-			}
-
-			// Wait for the container to be gracefully self-stopped
-			final int timeOfWait = 30;
-			try {
-				dockerManager.waitForContainerStopped(containerId, timeOfWait);
-			} catch (Exception e) {
-				failRecordingCompletion(recording, containerId,
-						new OpenViduException(Code.RECORDING_COMPLETION_ERROR_CODE,
-								"The recording completion process couldn't finish in " + timeOfWait + " seconds"));
-			}
-
-			// Remove container
-			dockerManager.removeDockerContainer(containerId, false);
-			containers.remove(containerId);
-
-			// Update recording attributes reading from video report file
-			try {
-				RecordingInfoUtils infoUtils = new RecordingInfoUtils(
-						this.openviduConfig.getOpenViduRecordingPath() + recordingId + "/" + recordingId + ".info");
-
-				if (!infoUtils.hasVideo()) {
-					log.error("COMPOSED recording {} with hasVideo=true has not video track", recordingId);
-					recording.setStatus(io.openvidu.java.client.Recording.Status.failed);
-				} else {
-					recording.setStatus(io.openvidu.java.client.Recording.Status.ready);
-					recording.setDuration(infoUtils.getDurationInSeconds());
-					recording.setSize(infoUtils.getSizeInBytes());
-					recording.setResolution(infoUtils.videoWidth() + "x" + infoUtils.videoHeight());
-					recording.setHasAudio(infoUtils.hasAudio());
-					recording.setHasVideo(infoUtils.hasVideo());
-				}
-				infoUtils.deleteFilePath();
-			} catch (IOException e) {
-				recording.setStatus(io.openvidu.java.client.Recording.Status.failed);
-				throw new OpenViduException(Code.RECORDING_REPORT_ERROR_CODE,
-						"There was an error generating the metadata report file for the recording: " + e.getMessage());
-			}
-
-			String filesPath = this.openviduConfig.getOpenViduRecordingPath() + recording.getId() + "/";
-			recording = this.sealRecordingMetadataFileAsReady(recording, recording.getSize(), recording.getDuration(),
-					filesPath + RecordingManager.RECORDING_ENTITY_FILE + recording.getId());
+			stopAndRemoveRecordingContainer(recording, containerId, 30);
+			recording = updateRecordingAttributes(recording);
+			cleanRecordingMaps(recording);
 
 			final long timestamp = System.currentTimeMillis();
 			this.cdr.recordRecordingStatusChanged(recording, reason, timestamp, recording.getStatus());
@@ -423,6 +380,56 @@ public class ComposedRecordingService extends RecordingService {
 		}
 
 		return finalRecordingArray[0];
+	}
+
+	private void stopAndRemoveRecordingContainer(Recording recording, String containerId, int secondsOfWait) {
+		// Gracefully stop ffmpeg process
+		try {
+			dockerManager.runCommandInContainer(containerId, "echo 'q' > stop", 0);
+		} catch (InterruptedException e1) {
+			e1.printStackTrace();
+		}
+		// Wait for the container to be gracefully self-stopped
+		try {
+			dockerManager.waitForContainerStopped(containerId, secondsOfWait);
+		} catch (Exception e) {
+			failRecordingCompletion(recording, containerId, new OpenViduException(Code.RECORDING_COMPLETION_ERROR_CODE,
+					"The recording completion process couldn't finish in " + secondsOfWait + " seconds"));
+		}
+		// Remove container
+		dockerManager.removeDockerContainer(containerId, false);
+		containers.remove(containerId);
+	}
+
+	private Recording updateRecordingAttributes(Recording recording) {
+		try {
+			// Update recording attributes reading from video report file
+			RecordingInfoUtils infoUtils = new RecordingInfoUtils(this.openviduConfig.getOpenViduRecordingPath()
+					+ recording.getId() + "/" + recording.getId() + ".info");
+			if (!infoUtils.hasVideo()) {
+				log.error("COMPOSED recording {} with hasVideo=true has not video track", recording.getId());
+				recording.setStatus(io.openvidu.java.client.Recording.Status.failed);
+			} else {
+				recording.setStatus(io.openvidu.java.client.Recording.Status.ready);
+				recording.setDuration(infoUtils.getDurationInSeconds());
+				recording.setSize(infoUtils.getSizeInBytes());
+				recording.setResolution(infoUtils.videoWidth() + "x" + infoUtils.videoHeight());
+				recording.setHasAudio(infoUtils.hasAudio());
+				recording.setHasVideo(infoUtils.hasVideo());
+			}
+			infoUtils.deleteFilePath();
+
+			// Update recording metadata file
+			String filesPath = this.openviduConfig.getOpenViduRecordingPath() + recording.getId() + "/";
+			recording = this.sealRecordingMetadataFileAsReady(recording, recording.getSize(), recording.getDuration(),
+					filesPath + RecordingManager.RECORDING_ENTITY_FILE + recording.getId());
+
+			return recording;
+		} catch (IOException e) {
+			recording.setStatus(io.openvidu.java.client.Recording.Status.failed);
+			throw new OpenViduException(Code.RECORDING_REPORT_ERROR_CODE,
+					"There was an error generating the metadata report file for the recording: " + e.getMessage());
+		}
 	}
 
 	private void waitForVideoFileNotEmpty(Recording recording) throws OpenViduException {

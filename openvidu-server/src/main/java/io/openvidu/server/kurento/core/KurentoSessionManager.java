@@ -141,11 +141,9 @@ public class KurentoSessionManager extends SessionManager {
 	}
 
 	@Override
-	public synchronized boolean leaveRoom(Participant participant, Integer transactionId, EndReason reason,
+	public synchronized void leaveRoom(Participant participant, Integer transactionId, EndReason reason,
 			boolean closeWebSocket) {
 		log.debug("Request [LEAVE_ROOM] ({})", participant.getParticipantPublicId());
-
-		boolean sessionClosedByLastParticipant = false;
 
 		KurentoParticipant kParticipant = (KurentoParticipant) participant;
 		KurentoSession session = kParticipant.getSession();
@@ -215,7 +213,6 @@ public class KurentoSessionManager extends SessionManager {
 				} else {
 					log.info("No more participants in session '{}', removing it and closing it", sessionId);
 					this.closeSessionAndEmptyCollections(session, reason);
-					sessionClosedByLastParticipant = true;
 					showTokens();
 				}
 			} else if (remainingParticipants.size() == 1 && openviduConfig.isRecordingModuleEnabled()
@@ -234,8 +231,6 @@ public class KurentoSessionManager extends SessionManager {
 		if (closeWebSocket) {
 			sessionEventsHandler.closeRpcSession(participant.getParticipantPrivateId());
 		}
-
-		return sessionClosedByLastParticipant;
 	}
 
 	/**
@@ -531,15 +526,13 @@ public class KurentoSessionManager extends SessionManager {
 	}
 
 	@Override
-	public boolean evictParticipant(Participant evictedParticipant, Participant moderator, Integer transactionId,
+	public void evictParticipant(Participant evictedParticipant, Participant moderator, Integer transactionId,
 			EndReason reason) throws OpenViduException {
-
-		boolean sessionClosedByLastParticipant = false;
 
 		if (evictedParticipant != null) {
 			KurentoParticipant kParticipant = (KurentoParticipant) evictedParticipant;
 			Set<Participant> participants = kParticipant.getSession().getParticipants();
-			sessionClosedByLastParticipant = this.leaveRoom(kParticipant, null, reason, false);
+			this.leaveRoom(kParticipant, null, reason, false);
 			this.sessionEventsHandler.onForceDisconnect(moderator, evictedParticipant, participants, transactionId,
 					null, reason);
 			sessionEventsHandler.closeRpcSession(evictedParticipant.getParticipantPrivateId());
@@ -552,8 +545,6 @@ public class KurentoSessionManager extends SessionManager {
 						null);
 			}
 		}
-
-		return sessionClosedByLastParticipant;
 	}
 
 	@Override

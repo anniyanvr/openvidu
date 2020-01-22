@@ -93,7 +93,7 @@ public abstract class SessionManager {
 
 	public abstract void joinRoom(Participant participant, String sessionId, Integer transactionId);
 
-	public abstract boolean leaveRoom(Participant participant, Integer transactionId, EndReason reason,
+	public abstract void leaveRoom(Participant participant, Integer transactionId, EndReason reason,
 			boolean closeWebSocket);
 
 	public abstract void publishVideo(Participant participant, MediaOptions mediaOptions, Integer transactionId);
@@ -135,7 +135,7 @@ public abstract class SessionManager {
 	public abstract boolean unpublishStream(Session session, String streamId, Participant moderator,
 			Integer transactionId, EndReason reason);
 
-	public abstract boolean evictParticipant(Participant evictedParticipant, Participant moderator,
+	public abstract void evictParticipant(Participant evictedParticipant, Participant moderator,
 			Integer transactionId, EndReason reason);
 
 	public abstract void applyFilter(Session session, String streamId, String filterType, JsonObject filterOptions,
@@ -473,7 +473,7 @@ public abstract class SessionManager {
 			throw new OpenViduException(Code.ROOM_NOT_FOUND_ERROR_CODE, "Session '" + sessionId + "' not found");
 		}
 		if (session.isClosed()) {
-			this.closeSessionAndEmptyCollections(session, reason);
+			this.cleanCollections(sessionId);
 			throw new OpenViduException(Code.ROOM_CLOSED_ERROR_CODE, "Session '" + sessionId + "' already closed");
 		}
 		Set<Participant> participants = getParticipants(sessionId);
@@ -502,6 +502,12 @@ public abstract class SessionManager {
 		if (openviduConfig.isRecordingModuleEnabled()
 				&& this.recordingManager.sessionIsBeingRecorded(session.getSessionId())) {
 			recordingManager.stopRecording(session, null, RecordingManager.finalReason(reason));
+		}
+
+		if (EndReason.automaticStop.equals(reason) && (session.getParticipants().size() > 0)) {
+			log.warn(
+					"Some user connected to the session between automatic recording stop and session close up. Canceling session close up");
+			return;
 		}
 
 		final String mediaNodeId = session.getMediaNodeId();
