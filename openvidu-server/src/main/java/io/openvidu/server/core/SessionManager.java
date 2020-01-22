@@ -461,13 +461,10 @@ public abstract class SessionManager {
 	 * was forcibly closed.
 	 *
 	 * @param sessionId identifier of the session
-	 * @return
-	 * @return set of {@link Participant} POJOS representing the session's
-	 *         participants
 	 * @throws OpenViduException in case the session doesn't exist or has been
 	 *                           already closed
 	 */
-	public Set<Participant> closeSession(String sessionId, EndReason reason) {
+	public void closeSession(String sessionId, EndReason reason) {
 		Session session = sessions.get(sessionId);
 		if (session == null) {
 			throw new OpenViduException(Code.ROOM_NOT_FOUND_ERROR_CODE, "Session '" + sessionId + "' not found");
@@ -478,23 +475,13 @@ public abstract class SessionManager {
 		}
 		Set<Participant> participants = getParticipants(sessionId);
 
-		boolean sessionClosedByLastParticipant = false;
-
 		for (Participant p : participants) {
 			try {
-				sessionClosedByLastParticipant = this.evictParticipant(p, null, null, reason);
+				this.evictParticipant(p, null, null, reason);
 			} catch (OpenViduException e) {
 				log.warn("Error evicting participant '{}' from session '{}'", p.getParticipantPublicId(), sessionId, e);
 			}
 		}
-
-		if (!sessionClosedByLastParticipant) {
-			// This code should never be executed, as last evicted participant must trigger
-			// session close
-			this.closeSessionAndEmptyCollections(session, reason);
-		}
-
-		return participants;
 	}
 
 	public void closeSessionAndEmptyCollections(Session session, EndReason reason) {
