@@ -487,9 +487,13 @@ public class RecordingManager {
 					// but never publishing (publishers automatically abort this thread)
 					log.info("Closing session {} after automatic stop of recording {}", session.getSessionId(),
 							recordingId);
-					sessionManager.closeSessionAndEmptyCollections(session, EndReason.automaticStop);
+					sessionManager.closeSessionAndEmptyCollections(session, EndReason.automaticStop, true);
 					sessionManager.showTokens();
 				} else {
+					// There are users connected, but no one is publishing
+					log.info(
+							"Automatic stopping recording {}. There are users connected to session {}, but no one is publishing",
+							recordingId, session.getSessionId());
 					this.stopRecording(session, recordingId, EndReason.automaticStop);
 				}
 			} else {
@@ -515,7 +519,7 @@ public class RecordingManager {
 				log.info(
 						"Ongoing recording of session {} was explicetly stopped within timeout for automatic recording stop. Closing session",
 						session.getSessionId());
-				sessionManager.closeSessionAndEmptyCollections(session, reason);
+				sessionManager.closeSessionAndEmptyCollections(session, reason, false);
 				sessionManager.showTokens();
 			}
 			return cancelled;

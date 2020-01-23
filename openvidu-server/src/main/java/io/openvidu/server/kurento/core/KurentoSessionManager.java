@@ -212,7 +212,7 @@ public class KurentoSessionManager extends SessionManager {
 					recordingManager.initAutomaticRecordingStopThread(session);
 				} else {
 					log.info("No more participants in session '{}', removing it and closing it", sessionId);
-					this.closeSessionAndEmptyCollections(session, reason);
+					this.closeSessionAndEmptyCollections(session, reason, true);
 					showTokens();
 				}
 			} else if (remainingParticipants.size() == 1 && openviduConfig.isRecordingModuleEnabled()

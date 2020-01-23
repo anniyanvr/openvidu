@@ -475,18 +475,27 @@ public abstract class SessionManager {
 		}
 		Set<Participant> participants = getParticipants(sessionId);
 
-		for (Participant p : participants) {
-			try {
-				this.evictParticipant(p, null, null, reason);
-			} catch (OpenViduException e) {
-				log.warn("Error evicting participant '{}' from session '{}'", p.getParticipantPublicId(), sessionId, e);
+		if (participants.isEmpty()) {
+			// If there are no participants we must close the session explicitly
+			// This case can be reached if for example a session during automatic recording
+			// timeout is actively closed through REST API
+			this.closeSessionAndEmptyCollections(session, reason, true);
+		} else {
+			for (Participant p : participants) {
+				try {
+					// Last participant will trigger session close up
+					this.evictParticipant(p, null, null, reason);
+				} catch (OpenViduException e) {
+					log.warn("Error evicting participant '{}' from session '{}'", p.getParticipantPublicId(),
+							sessionId, e);
+				}
 			}
 		}
 	}
 
-	public void closeSessionAndEmptyCollections(Session session, EndReason reason) {
+	public void closeSessionAndEmptyCollections(Session session, EndReason reason, boolean stopRecording) {
 
-		if (openviduConfig.isRecordingModuleEnabled()
+		if (openviduConfig.isRecordingModuleEnabled() && stopRecording
 				&& this.recordingManager.sessionIsBeingRecorded(session.getSessionId())) {
 			recordingManager.stopRecording(session, null, RecordingManager.finalReason(reason));
 		}
